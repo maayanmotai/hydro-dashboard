@@ -1,13 +1,19 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { format, subDays, isAfter } from 'date-fns'
+import { format, subDays, isAfter, differenceInMinutes } from 'date-fns'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { Droplet, Thermometer, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Droplet, Thermometer, AlertTriangle, CheckCircle, WifiOff } from 'lucide-react'
 
 function App() {
   const [data, setData] = useState([])
   const [currentStatus, setCurrentStatus] = useState(null)
   const [timeRange, setTimeRange] = useState('day')
+  const [now, setNow] = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     fetchData()
@@ -56,6 +62,9 @@ function App() {
   }))
 
   const isWaterAlert = currentStatus?.water_level !== 'OK'
+  const isOffline = currentStatus?.created_at 
+    ? differenceInMinutes(now, new Date(currentStatus.created_at)) >= 5 
+    : false;
 
   return (
     <div className="min-h-screen p-6 max-w-5xl mx-auto space-y-6 text-gray-800">
@@ -68,6 +77,17 @@ function App() {
           Last updated: {currentStatus?.created_at ? format(new Date(currentStatus.created_at), 'HH:mm:ss') : 'Loading...'}
         </div>
       </header>
+
+      {/* Offline Alert Banner */}
+      {isOffline && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg flex items-center gap-3">
+          <WifiOff size={28} />
+          <div>
+            <p className="font-bold">מערכת מנותקת / הפסקת חשמל</p>
+            <p className="text-sm">לא התקבלו נתונים מהבקר ב-5 הדקות האחרונות. אנא בדוק חיבור לחשמל ול-WiFi.</p>
+          </div>
+        </div>
+      )}
 
       {/* Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
