@@ -1,42 +1,14 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { format, subDays, isAfter, differenceInMinutes } from 'date-fns'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea } from 'recharts'
-import { Droplet, Thermometer, AlertTriangle, CheckCircle, WifiOff, Bell, BellOff, ZapOff, Clock } from 'lucide-react'
-
-// Play audio alarm tone on power outage
-const playAlarmSound = () => {
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext
-    if (!AudioCtx) return
-    const ctx = new AudioCtx()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.type = 'sawtooth'
-    osc.frequency.setValueAtTime(600, ctx.currentTime)
-    osc.frequency.setValueAtTime(900, ctx.currentTime + 0.2)
-    osc.frequency.setValueAtTime(600, ctx.currentTime + 0.4)
-    osc.frequency.setValueAtTime(900, ctx.currentTime + 0.6)
-    gain.gain.setValueAtTime(0.3, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8)
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.start()
-    osc.stop(ctx.currentTime + 0.8)
-  } catch (e) {
-    console.error('Audio alert error:', e)
-  }
-}
+import { Droplet, Thermometer, AlertTriangle, CheckCircle, WifiOff, ZapOff, Clock, Send } from 'lucide-react'
 
 function App() {
   const [data, setData] = useState([])
   const [currentStatus, setCurrentStatus] = useState(null)
   const [timeRange, setTimeRange] = useState('day')
   const [now, setNow] = useState(new Date())
-  const [notificationsEnabled, setNotificationsEnabled] = useState(
-    typeof Notification !== 'undefined' && Notification.permission === 'granted'
-  )
-  const hasAlertedRef = useRef(false)
 
   // Update current time every 30 seconds for accurate offline detection
   useEffect(() => {
@@ -77,48 +49,11 @@ function App() {
     }
   }
 
-  // Request notification permission
-  const requestNotificationPermission = async () => {
-    if (typeof Notification === 'undefined') {
-      alert('הדפדפן שלך אינו תומך בהתראות Web Push')
-      return
-    }
-    const permission = await Notification.requestPermission()
-    if (permission === 'granted') {
-      setNotificationsEnabled(true)
-      new Notification('🔔 התראות הופעלו בהצלחה!', {
-        body: 'תקבל התראה מידית אם תזוהה הפסקת חשמל או ניתוק במערכת ההידרופונית.',
-        icon: '/favicon.svg'
-      })
-    } else {
-      setNotificationsEnabled(false)
-    }
-  }
-
   // Offline / Power Outage calculation
   const diffSinceLastUpdate = currentStatus?.created_at 
     ? differenceInMinutes(now, new Date(currentStatus.created_at)) 
     : 0;
   const isOffline = currentStatus?.created_at ? diffSinceLastUpdate >= 5 : false;
-
-  // Immediate Alert Trigger when power outage / offline is detected
-  useEffect(() => {
-    if (isOffline) {
-      if (!hasAlertedRef.current) {
-        hasAlertedRef.current = true
-        playAlarmSound()
-        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-          new Notification('🚨 התראת הפסקת חשמל במערכת!', {
-            body: `לא התקבלו נתונים מה-ESP32 כבר ${diffSinceLastUpdate} דקות. ייתכן שיש הפסקת חשמל!`,
-            icon: '/favicon.svg',
-            requireInteraction: true
-          })
-        }
-      }
-    } else {
-      hasAlertedRef.current = false
-    }
-  }, [isOffline, diffSinceLastUpdate])
 
   // Process data for chart & filter
   const filteredData = data.filter(item => {
@@ -139,14 +74,14 @@ function App() {
     }
   })
 
-  // Detect outages / downtime periods in filtered data
-  const outages = []
+  // Detect past completed outages in filtered data (safe for Recharts ReferenceArea)
+  const completedOutages = []
   for (let i = 1; i < filteredData.length; i++) {
     const prevTime = new Date(filteredData[i - 1].created_at)
     const currTime = new Date(filteredData[i].created_at)
     const diffMins = differenceInMinutes(currTime, prevTime)
     if (diffMins >= 5) {
-      outages.push({
+      completedOutages.push({
         start: filteredData[i - 1].formattedTime,
         end: filteredData[i].formattedTime,
         startDate: prevTime,
@@ -157,12 +92,13 @@ function App() {
     }
   }
 
-  // If currently offline, add ongoing outage
+  // All outages including currently ongoing for the log table
+  const allOutages = [...completedOutages]
   if (isOffline && currentStatus?.created_at) {
     const lastTime = new Date(currentStatus.created_at)
-    outages.push({
+    allOutages.push({
       start: format(lastTime, timeRange === 'day' ? 'HH:mm' : 'dd/MM HH:mm'),
-      end: format(now, timeRange === 'day' ? 'HH:mm' : 'dd/MM HH:mm'),
+      end: 'כעת',
       startDate: lastTime,
       endDate: now,
       durationMins: diffSinceLastUpdate,
@@ -188,42 +124,26 @@ function App() {
           </p>
         </div>
 
-        {/* Notifications Button */}
-        <button
-          onClick={requestNotificationPermission}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer ${
-            notificationsEnabled 
-              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
-              : 'bg-blue-600 text-white hover:bg-blue-700 shadow'
-          }`}
-        >
-          {notificationsEnabled ? (
-            <>
-              <Bell size={18} />
-              התראות פוש מופעלות
-            </>
-          ) : (
-            <>
-              <BellOff size={18} />
-              הפעל התראות פוש לטלפון
-            </>
-          )}
-        </button>
+        {/* Telegram Bot Status Badge */}
+        <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3.5 py-1.5 rounded-xl text-sm font-semibold border border-blue-200">
+          <Send size={16} className="text-blue-600" />
+          התראות מחוברות לטלגרם 🤖
+        </div>
       </header>
 
-      {/* Outage / Power Loss Banner */}
+      {/* Outage / Power Loss Banner (Visual only, no audio/popups) */}
       {isOffline && (
-        <div className="bg-red-50 border-2 border-red-500 text-red-900 p-5 rounded-2xl flex items-start gap-4 shadow-lg animate-pulse">
-          <ZapOff className="text-red-600 shrink-0 mt-1" size={36} />
+        <div className="bg-red-50 border-2 border-red-500 text-red-900 p-5 rounded-2xl flex items-start gap-4 shadow-sm">
+          <ZapOff className="text-red-600 shrink-0 mt-1" size={34} />
           <div className="space-y-1">
             <h3 className="text-xl font-bold flex items-center gap-2 text-red-700">
-              התראת הפסקת חשמל / מערכת מנותקת!
+              המערכת מנותקת / הפסקת חשמל
             </h3>
             <p className="text-base">
-              לא התקבל שום אות מה-ESP32 כבר <strong>{diffSinceLastUpdate} דקות</strong> (העדכון הרגיל נשלח כל 2 דקות).
+              לא התקבל שידור מה-ESP32 כבר <strong>{diffSinceLastUpdate} דקות</strong> (עדכון נשלח כל 2 דקות בשגרה).
             </p>
             <p className="text-sm text-red-600">
-              סביר להניח שיש הפסקת חשמל במקום, תקלת ספק כוח, או ניתוק ב-WiFi.
+              התראות נשלחות אוטומטית לבוט הטלגרם שלך.
             </p>
           </div>
         </div>
@@ -286,14 +206,14 @@ function App() {
           <div>
             <h2 className="text-xl font-bold flex items-center gap-2">
               היסטוריית טמפרטורה
-              {outages.length > 0 && (
+              {completedOutages.length > 0 && (
                 <span className="text-xs font-semibold bg-red-100 text-red-700 px-2.5 py-0.5 rounded-full">
-                  זוהו {outages.length} הפסקות חשמל בגרף
+                  {completedOutages.length} הפסקות בעבר
                 </span>
               )}
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              האזורים המסומנים באדום מייצגים פרקי זמן שבהם הבקר לא שידר (הפסקת חשמל/ניתוק)
+              האזורים המסומנים באדום בגרף מייצגים הפסקות שידור
             </p>
           </div>
 
@@ -331,8 +251,8 @@ function App() {
                 formatter={(val) => [val != null ? `${val}°` : 'שגיאת חיישן', 'טמפרטורה']}
               />
 
-              {/* Shaded red areas for detected power outages */}
-              {outages.map((outage, idx) => (
+              {/* Shaded red areas only for completed outages where coordinates exist */}
+              {completedOutages.map((outage, idx) => (
                 <ReferenceArea 
                   key={idx}
                   x1={outage.start} 
@@ -342,7 +262,7 @@ function App() {
                   stroke="#ef4444"
                   strokeDasharray="3 3"
                   label={{
-                    value: outage.ongoing ? `הפסקת חשמל (${outage.durationMins} דק')` : `הפסקת חשמל (${outage.durationMins} דק')`,
+                    value: `הפסקת חשמל (${outage.durationMins} דק')`,
                     position: 'insideTop',
                     fill: '#b91c1c',
                     fontSize: 11,
@@ -372,13 +292,13 @@ function App() {
           יומן הפסקות חשמל וזמני ניתוק
         </h3>
 
-        {outages.length === 0 ? (
+        {allOutages.length === 0 ? (
           <p className="text-sm text-gray-500 bg-gray-50 p-4 rounded-xl text-center">
             לא זוהו הפסקות חשמל או ניתוקים בטווח הזמן שנבחר. המערכת פעלה ברציפות! ✔️
           </p>
         ) : (
           <div className="space-y-3">
-            {outages.map((outage, idx) => (
+            {allOutages.map((outage, idx) => (
               <div 
                 key={idx}
                 className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
