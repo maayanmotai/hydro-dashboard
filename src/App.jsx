@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { format, subDays, isAfter, differenceInMinutes } from 'date-fns'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea } from 'recharts'
-import { Droplet, Thermometer, AlertTriangle, CheckCircle, WifiOff, ZapOff, Clock, Send } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea } from 'recharts'
+import { Droplet, Thermometer, AlertTriangle, CheckCircle, WifiOff, ZapOff, Clock, Send, TrendingUp, TrendingDown, Activity } from 'lucide-react'
 
 function App() {
   const [data, setData] = useState([])
@@ -69,10 +69,16 @@ function App() {
     return {
       ...item,
       rawTemperature: item.temperature,
-      temperature: isValidTemp ? Number(item.temperature) : null,
+      temperature: isValidTemp ? Number(Number(item.temperature).toFixed(1)) : null,
       formattedTime: format(new Date(item.created_at), timeRange === 'day' ? 'HH:mm' : 'dd/MM HH:mm')
     }
   })
+
+  // Calculate statistics (Min, Max, Avg)
+  const validTemps = filteredData.map(d => d.temperature).filter(t => t != null)
+  const minTemp = validTemps.length ? Math.min(...validTemps).toFixed(1) : '--'
+  const maxTemp = validTemps.length ? Math.max(...validTemps).toFixed(1) : '--'
+  const avgTemp = validTemps.length ? (validTemps.reduce((a, b) => a + b, 0) / validTemps.length).toFixed(1) : '--'
 
   // Detect past completed outages in filtered data (safe for Recharts ReferenceArea)
   const completedOutages = []
@@ -111,38 +117,38 @@ function App() {
   const isTempError = currentStatus?.temperature == null || currentStatus?.temperature <= -50 || currentStatus?.temperature >= 80
 
   return (
-    <div className="min-h-screen p-4 md:p-8 max-w-5xl mx-auto space-y-6 text-gray-800" dir="rtl">
+    <div className="min-h-screen p-3 md:p-8 max-w-4xl mx-auto space-y-5 text-gray-800 bg-gray-50/50" dir="rtl">
       {/* Header */}
-      <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b gap-4">
+      <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b gap-3">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Droplet className="text-blue-500" size={32} />
+          <h1 className="text-2xl md:text-3xl font-extrabold flex items-center gap-2 text-gray-900 tracking-tight">
+            <Droplet className="text-blue-500 fill-blue-500" size={28} />
             Hydro Dashboard
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-xs text-gray-500 mt-0.5">
             עדכון אחרון: {currentStatus?.created_at ? format(new Date(currentStatus.created_at), 'dd/MM/yyyy HH:mm:ss') : 'טוען...'}
           </p>
         </div>
 
         {/* Telegram Bot Status Badge */}
-        <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3.5 py-1.5 rounded-xl text-sm font-semibold border border-blue-200">
-          <Send size={16} className="text-blue-600" />
+        <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-xl text-xs font-semibold border border-blue-200 shadow-xs">
+          <Send size={14} className="text-blue-600" />
           התראות מחוברות לטלגרם 🤖
         </div>
       </header>
 
       {/* Outage / Power Loss Banner (Visual only, no audio/popups) */}
       {isOffline && (
-        <div className="bg-red-50 border-2 border-red-500 text-red-900 p-5 rounded-2xl flex items-start gap-4 shadow-sm">
-          <ZapOff className="text-red-600 shrink-0 mt-1" size={34} />
-          <div className="space-y-1">
-            <h3 className="text-xl font-bold flex items-center gap-2 text-red-700">
+        <div className="bg-red-50 border-2 border-red-500 text-red-900 p-4 md:p-5 rounded-2xl flex items-start gap-3.5 shadow-xs">
+          <ZapOff className="text-red-600 shrink-0 mt-0.5" size={30} />
+          <div className="space-y-0.5">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-red-700">
               המערכת מנותקת / הפסקת חשמל
             </h3>
-            <p className="text-base">
+            <p className="text-sm">
               לא התקבל שידור מה-ESP32 כבר <strong>{diffSinceLastUpdate} דקות</strong> (עדכון נשלח כל 2 דקות בשגרה).
             </p>
-            <p className="text-sm text-red-600">
+            <p className="text-xs text-red-600 font-medium">
               התראות נשלחות אוטומטית לבוט הטלגרם שלך.
             </p>
           </div>
@@ -150,50 +156,50 @@ function App() {
       )}
 
       {/* Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         
         {/* Temperature Card */}
-        <div className={`rounded-2xl shadow-sm p-6 flex flex-col justify-center items-center gap-3 border transition-colors ${
-          isTempError ? 'bg-red-50 border-red-300 text-red-800' : 'bg-white border-gray-100'
+        <div className={`rounded-2xl shadow-xs p-5 flex flex-col justify-center items-center gap-2 border transition-all ${
+          isTempError ? 'bg-red-50 border-red-300 text-red-800' : 'bg-white border-gray-200/70'
         }`}>
-          <div className="flex items-center gap-2 text-lg font-medium text-gray-600">
-            <Thermometer size={26} className={isTempError ? 'text-red-500' : 'text-orange-500'} />
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-500">
+            <Thermometer size={20} className={isTempError ? 'text-red-500' : 'text-orange-500'} />
             טמפרטורת מים
           </div>
           
           {isTempError ? (
             <div className="text-center space-y-1">
-              <div className="text-3xl font-extrabold text-red-600 flex items-center justify-center gap-2">
-                <AlertTriangle size={32} />
+              <div className="text-2xl font-black text-red-600 flex items-center justify-center gap-1.5">
+                <AlertTriangle size={24} />
                 שגיאת חיישן
               </div>
-              <p className="text-sm text-red-500 font-medium">
-                החיישן מנותק או לא מזוהה (-127)
+              <p className="text-xs text-red-500 font-medium">
+                חיישן מנותק (-127)
               </p>
             </div>
           ) : (
-            <div className="text-6xl font-black text-gray-900">
+            <div className="text-5xl font-black text-gray-900 tracking-tight">
               {currentStatus?.temperature != null ? `${Number(currentStatus.temperature).toFixed(1)}°` : '--'}
             </div>
           )}
         </div>
 
         {/* Water Level Card */}
-        <div className={`rounded-2xl shadow-sm p-6 flex flex-col justify-center items-center gap-3 text-white transition-colors ${
+        <div className={`rounded-2xl shadow-xs p-5 flex flex-col justify-center items-center gap-2 text-white transition-all ${
           isWaterAlert ? 'bg-red-500' : 'bg-emerald-600'
         }`}>
-          <div className="flex items-center gap-2 text-lg font-medium">
-            <Droplet size={26} />
+          <div className="flex items-center gap-2 text-sm font-semibold text-white/90">
+            <Droplet size={20} />
             מפלס מים (מצוף)
           </div>
-          <div className="text-4xl font-extrabold flex items-center gap-3">
+          <div className="text-3xl font-black flex items-center gap-2 tracking-tight">
             {isWaterAlert ? (
               <>
-                <AlertTriangle size={36} /> חסרים מים!
+                <AlertTriangle size={28} /> חסרים מים!
               </>
             ) : (
               <>
-                <CheckCircle size={36} /> מפלס תקין
+                <CheckCircle size={28} /> מפלס תקין
               </>
             )}
           </div>
@@ -201,23 +207,29 @@ function App() {
       </div>
 
       {/* Chart Section */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="bg-white rounded-2xl shadow-xs border border-gray-200/70 p-4 md:p-6 space-y-4">
+        
+        {/* Chart Header & Filter Controls */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div>
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              היסטוריית טמפרטורה
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg md:text-xl font-bold text-gray-900 flex items-center gap-1.5">
+                <Activity size={20} className="text-blue-500" />
+                היסטוריית טמפרטורה
+              </h2>
               {completedOutages.length > 0 && (
-                <span className="text-xs font-semibold bg-red-100 text-red-700 px-2.5 py-0.5 rounded-full">
-                  {completedOutages.length} הפסקות בעבר
+                <span className="text-xs font-semibold bg-rose-100 text-rose-700 px-2.5 py-0.5 rounded-full">
+                  {completedOutages.length} הפסקות חשמל
                 </span>
               )}
-            </h2>
+            </div>
             <p className="text-xs text-gray-400 mt-0.5">
-              האזורים המסומנים באדום בגרף מייצגים הפסקות שידור
+              האזורים המסומנים באדום מייצגים פרקי זמן ללא שידור
             </p>
           </div>
 
-          <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+          {/* Time Filter Buttons */}
+          <div className="flex bg-gray-100/80 rounded-xl p-1 gap-1 self-stretch sm:self-auto justify-center">
             {[
               { id: 'day', label: 'יום' },
               { id: 'week', label: 'שבוע' },
@@ -227,9 +239,9 @@ function App() {
               <button
                 key={range.id}
                 onClick={() => setTimeRange(range.id)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+                className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   timeRange === range.id 
-                    ? 'bg-white shadow-sm text-blue-600' 
+                    ? 'bg-white shadow-xs text-blue-600' 
                     : 'text-gray-500 hover:text-gray-900'
                 }`}
               >
@@ -238,90 +250,161 @@ function App() {
             ))}
           </div>
         </div>
-        
-        <div className="h-[380px] w-full" dir="ltr">
+
+        {/* Quick Stats Bar */}
+        <div className="grid grid-cols-3 gap-2 p-2.5 bg-gray-50/80 rounded-xl border border-gray-100 text-center">
+          <div className="flex flex-col items-center justify-center">
+            <span className="text-2xs text-gray-400 font-semibold flex items-center gap-1">
+              <TrendingDown size={12} className="text-blue-500" /> מינימום
+            </span>
+            <span className="text-sm md:text-base font-extrabold text-blue-600 mt-0.5">
+              {minTemp !== '--' ? `${minTemp}°` : '--'}
+            </span>
+          </div>
+          <div className="flex flex-col items-center justify-center border-x border-gray-200/60">
+            <span className="text-2xs text-gray-400 font-semibold flex items-center gap-1">
+              <Activity size={12} className="text-gray-400" /> ממוצע
+            </span>
+            <span className="text-sm md:text-base font-extrabold text-gray-800 mt-0.5">
+              {avgTemp !== '--' ? `${avgTemp}°` : '--'}
+            </span>
+          </div>
+          <div className="flex flex-col items-center justify-center">
+            <span className="text-2xs text-gray-400 font-semibold flex items-center gap-1">
+              <TrendingUp size={12} className="text-orange-500" /> מקסימום
+            </span>
+            <span className="text-sm md:text-base font-extrabold text-orange-600 mt-0.5">
+              {maxTemp !== '--' ? `${maxTemp}°` : '--'}
+            </span>
+          </div>
+        </div>
+
+        {/* Modern Area Chart */}
+        <div className="h-[320px] md:h-[380px] w-full pt-2" dir="ltr">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={filteredData} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="formattedTime" tick={{ fontSize: 12 }} />
-              <YAxis domain={['auto', 'auto']} tickFormatter={(value) => `${value}°`} tick={{ fontSize: 12 }} />
+            <AreaChart data={filteredData} margin={{ top: 12, right: 10, left: -15, bottom: 5 }}>
+              <defs>
+                <linearGradient id="tempGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.35}/>
+                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0.0}/>
+                </linearGradient>
+              </defs>
+
+              <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
+              
+              <XAxis 
+                dataKey="formattedTime" 
+                tick={{ fontSize: 11, fill: '#94a3b8' }} 
+                axisLine={{ stroke: '#e2e8f0' }}
+                tickLine={false}
+                minTickGap={25}
+              />
+              
+              <YAxis 
+                domain={[dataMin => Math.floor(dataMin - 0.5), dataMax => Math.ceil(dataMax + 0.5)]}
+                tickFormatter={(value) => `${value}°`} 
+                tick={{ fontSize: 11, fill: '#94a3b8' }} 
+                axisLine={false}
+                tickLine={false}
+              />
+              
               <Tooltip 
-                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                labelStyle={{ fontWeight: 'bold', color: '#1f2937' }}
-                formatter={(val) => [val != null ? `${val}°` : 'שגיאת חיישן', 'טמפרטורה']}
+                contentStyle={{ 
+                  borderRadius: '14px', 
+                  border: '1px solid #e2e8f0', 
+                  boxShadow: '0 8px 20px -4px rgba(0, 0, 0, 0.1)',
+                  padding: '8px 12px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.96)',
+                  backdropFilter: 'blur(6px)'
+                }}
+                labelStyle={{ fontWeight: '700', color: '#1e293b', marginBottom: '2px', fontSize: '12px' }}
+                formatter={(val) => [val != null ? `${Number(val).toFixed(1)}°C` : 'שגיאת חיישן', 'טמפרטורה']}
               />
 
-              {/* Shaded red areas only for completed outages where coordinates exist */}
+              {/* Shaded clean rose areas for outages (NO overlapping text labels!) */}
               {completedOutages.map((outage, idx) => (
                 <ReferenceArea 
                   key={idx}
                   x1={outage.start} 
                   x2={outage.end} 
-                  fill="#fee2e2" 
-                  fillOpacity={0.7}
-                  stroke="#ef4444"
-                  strokeDasharray="3 3"
-                  label={{
-                    value: `הפסקת חשמל (${outage.durationMins} דק')`,
-                    position: 'insideTop',
-                    fill: '#b91c1c',
-                    fontSize: 11,
-                    fontWeight: 600
-                  }}
+                  fill="#fecdd3" 
+                  fillOpacity={0.35}
+                  stroke="#fb7185"
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
                 />
               ))}
 
-              <Line 
+              <Area 
                 type="monotone" 
                 dataKey="temperature" 
                 stroke="#2563eb" 
-                strokeWidth={3}
+                strokeWidth={2.5}
+                fillOpacity={1}
+                fill="url(#tempGradient)"
                 dot={false}
-                activeDot={{ r: 7 }}
+                activeDot={{ r: 6, fill: '#2563eb', stroke: '#ffffff', strokeWidth: 2 }}
                 connectNulls={false}
               />
-            </LineChart>
+            </AreaChart>
           </ResponsiveContainer>
+        </div>
+
+        {/* Chart Legend Footer */}
+        <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-xs text-gray-500">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5 font-medium">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span>
+              טמפרטורת מים
+            </span>
+            {completedOutages.length > 0 && (
+              <span className="flex items-center gap-1.5 font-medium">
+                <span className="w-2.5 h-2.5 rounded-sm bg-rose-200 border border-rose-400 inline-block"></span>
+                הפסקות חשמל (מוצלל)
+              </span>
+            )}
+          </div>
+          <span className="text-gray-400 text-2xs">פירוט מלא ביומן למטה</span>
         </div>
       </div>
 
       {/* Outage Log Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-        <h3 className="text-lg font-bold flex items-center gap-2">
-          <Clock className="text-gray-500" size={22} />
+      <div className="bg-white rounded-2xl shadow-xs border border-gray-200/70 p-4 md:p-6 space-y-3.5">
+        <h3 className="text-base md:text-lg font-bold flex items-center gap-2 text-gray-900">
+          <Clock className="text-gray-400" size={20} />
           יומן הפסקות חשמל וזמני ניתוק
         </h3>
 
         {allOutages.length === 0 ? (
-          <p className="text-sm text-gray-500 bg-gray-50 p-4 rounded-xl text-center">
+          <p className="text-xs md:text-sm text-gray-500 bg-gray-50/80 p-3.5 rounded-xl text-center">
             לא זוהו הפסקות חשמל או ניתוקים בטווח הזמן שנבחר. המערכת פעלה ברציפות! ✔️
           </p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {allOutages.map((outage, idx) => (
               <div 
                 key={idx}
-                className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
-                  outage.ongoing ? 'bg-red-50 border-red-300' : 'bg-gray-50 border-gray-200'
+                className={`p-3 md:p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${
+                  outage.ongoing ? 'bg-red-50/70 border-red-200' : 'bg-gray-50/70 border-gray-200/80'
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <ZapOff size={22} className={outage.ongoing ? 'text-red-600' : 'text-gray-500'} />
+                <div className="flex items-center gap-2.5">
+                  <ZapOff size={18} className={outage.ongoing ? 'text-red-600' : 'text-gray-400'} />
                   <div>
-                    <span className="font-bold text-gray-900">
+                    <span className="font-bold text-xs md:text-sm text-gray-900 block sm:inline">
                       {outage.ongoing ? 'הפסקת חשמל פעילה כעת ⚠️' : 'הפסקת חשמל שהסתיימה'}
                     </span>
-                    <p className="text-xs text-gray-500">
-                      {format(outage.startDate, 'dd/MM/yyyy HH:mm')} עד {outage.ongoing ? 'עכשיו' : format(outage.endDate, 'dd/MM/yyyy HH:mm')}
-                    </p>
+                    <span className="text-2xs md:text-xs text-gray-500 sm:mr-2">
+                      {format(outage.startDate, 'dd/MM HH:mm')} עד {outage.ongoing ? 'עכשיו' : format(outage.endDate, 'dd/MM HH:mm')}
+                    </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                    outage.ongoing ? 'bg-red-600 text-white animate-pulse' : 'bg-gray-200 text-gray-700'
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <span className={`px-2.5 py-0.5 rounded-full text-2xs md:text-xs font-bold ${
+                    outage.ongoing ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-700'
                   }`}>
-                    משך זמן: {outage.durationMins} דקות
+                    משך: {outage.durationMins} דקות
                   </span>
                 </div>
               </div>
