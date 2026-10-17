@@ -16,10 +16,63 @@ function App() {
     return () => clearInterval(timer)
   }, [])
 
-  // Initial fetch and Supabase Realtime subscription
+  // Fetch the latest current status directly from the database
+  async function fetchCurrentStatus() {
+    const { data: latestRow, error } = await supabase
+      .from('hydro_data')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (!error && latestRow) {
+      setCurrentStatus(latestRow)
+    }
+  }
+
+  // Fetch chart data according to time range with pagination support
+  async function fetchChartData(range) {
+    const nowTime = new Date()
+    let startDate = null
+    if (range === 'day') startDate = subDays(nowTime, 1)
+    else if (range === 'week') startDate = subDays(nowTime, 7)
+    else if (range === 'month') startDate = subDays(nowTime, 30)
+
+    let allData = []
+    let from = 0
+    const pageSize = 1000
+
+    try {
+      while (allData.length < 5000) {
+        let query = supabase
+          .from('hydro_data')
+          .select('*')
+          .order('created_at', { ascending: true })
+          .range(from, from + pageSize - 1)
+
+        if (startDate) {
+          query = query.gte('created_at', startDate.toISOString())
+        }
+
+        const { data: batch, error } = await query
+        if (error || !batch || batch.length === 0) break
+        allData.push(...batch)
+        if (batch.length < pageSize) break
+        from += pageSize
+      }
+
+      setData(allData)
+    } catch (err) {
+      console.error('Error fetching chart data:', err)
+    }
+  }
+
+  // Initial fetch and Supabase Realtime subscription + periodic refresh
   useEffect(() => {
-    fetchData()
+    fetchCurrentStatus()
+    fetchChartData(timeRange)
     
+    // Subscribe to new real-time readings
     const channel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'hydro_data' }, payload => {
@@ -28,26 +81,21 @@ function App() {
       })
       .subscribe()
 
+    // Periodically refresh current status every 30s
+    const statusInterval = setInterval(() => {
+      fetchCurrentStatus()
+    }, 30000)
+
     return () => {
       supabase.removeChannel(channel)
+      clearInterval(statusInterval)
     }
   }, [])
 
-  async function fetchData() {
-    let { data: hydroData, error } = await supabase
-      .from('hydro_data')
-      .select('*')
-      .order('created_at', { ascending: true })
-
-    if (error) {
-      console.log('error', error)
-    } else if (hydroData) {
-      setData(hydroData)
-      if (hydroData.length > 0) {
-        setCurrentStatus(hydroData[hydroData.length - 1])
-      }
-    }
-  }
+  // Refetch chart data whenever user changes time range
+  useEffect(() => {
+    fetchChartData(timeRange)
+  }, [timeRange])
 
   // Offline / Power Outage calculation
   const diffSinceLastUpdate = currentStatus?.created_at 
